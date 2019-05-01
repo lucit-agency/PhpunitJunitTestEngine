@@ -10,7 +10,8 @@ class Deployer {
     static function Deploy( \App\Commands\Deploy $lcBuildCommand )
     {
         $lcBuildCommand->info("Starting Deployment Process");
-       
+        
+        $lcBuildCommand->info("Deploying locally via git pull in /usr/local/bin/phpunitjunittestengine/");
         $process = new Process("cd /usr/local/bin/phpunitjunittestengine && git pull");
 
         try {
