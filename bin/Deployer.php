@@ -23,6 +23,19 @@ class Deployer {
             echo $e->getMessage();
         }
 
+        //
+        $lcBuildCommand->info("Publishing to github");
+        $process = new Process("git push github master");
+
+        try {
+            $process->setTty(true);
+            $process->mustRun(function ($type, $buffer) {
+                echo $buffer;
+            });
+        } catch (ProcessFailedException $e) {
+            echo $e->getMessage();
+        }
+
         $lcBuildCommand->info("Deployment Complete");
 
     }
