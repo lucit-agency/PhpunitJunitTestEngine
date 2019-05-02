@@ -5,6 +5,9 @@ namespace LCUtils;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
+/**
+ * Customer Deployer class for use with Lucit LCUtils CLI Library
+ */
 class Deployer {
 
     static function Deploy( \App\Commands\Deploy $lcBuildCommand )
@@ -23,7 +26,7 @@ class Deployer {
             echo $e->getMessage();
         }
 
-        //
+
         $lcBuildCommand->info("Publishing to github");
         $process = new Process("git push github master");
 

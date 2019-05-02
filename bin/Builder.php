@@ -5,6 +5,9 @@ namespace LCUtils;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
+/**
+ * Customer Builder class for use with Lucit LCUtils CLI Library
+ */
 class Builder {
 
     static function Build( \App\Commands\Build $lcBuildCommand )
@@ -13,7 +16,6 @@ class Builder {
 
         $lcBuildCommand->info("Starting Build Process to : ".$destination);
 
-        //git archive -o builds/lucitwp_theme.zip HEAD
         $wc = $lcBuildCommand->getWorkingCopy();
         $wc->archive("HEAD", ["o" => $destination] );
 
