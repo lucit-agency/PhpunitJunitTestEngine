@@ -1,0 +1,13 @@
+{
+  "linters": {
+    "php": {
+      "type": "php",
+      "include": "(\\.php$)"
+    },
+    "merge-confilic": {
+      "type": "merge-conflict"
+    }
+  }
+}
+
+
