@@ -27,6 +27,8 @@ final class ArcanistPhpunitJunitTestResultParser extends ArcanistTestResultParse
 
     $report = $this->getJunitReport($test_results);
 
+    $fileNameRel = basename($path);
+
     // coverage is for all testcases in the executed $path
     $coverage = array();
     if ($this->enableCoverage !== false) {
@@ -83,7 +85,7 @@ final class ArcanistPhpunitJunitTestResultParser extends ArcanistTestResultParse
       $name = preg_replace('/ \(.*\)/s', '', idx($event, 'test'));
 
       $result = new ArcanistUnitTestResult();
-      $result->setName($name);
+      $result->setName("[ ".$fileNameRel." ]\t".$name);
       $result->setResult($status);
       $result->setDuration(idx($event, 'time'));
       $result->setCoverage($coverage);
@@ -210,6 +212,10 @@ final class ArcanistPhpunitJunitTestResultParser extends ArcanistTestResultParse
               $testResult["status"] = "fail";
               $testResult["message"] = $childNode->textContent;
               break;
+            case "warning" :
+              $testResult["status"] = "fail";
+              $testResult["message"] = $childNode->textContent;
+              break;
           }
         }       
       }
@@ -221,5 +227,6 @@ final class ArcanistPhpunitJunitTestResultParser extends ArcanistTestResultParse
     return( $result );
     
   }
+
 
 }

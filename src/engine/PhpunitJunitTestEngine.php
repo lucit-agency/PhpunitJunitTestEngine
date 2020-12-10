@@ -9,10 +9,15 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
   private $phpunitBinary = 'phpunit';
   private $affectedTests;
   private $projectRoot;
+  private $exclude;
 
   public function run() {
+
     $this->projectRoot = $this->getWorkingCopy()->getProjectRoot();
     $this->affectedTests = array();
+
+    $this->prepareConfigFile();
+    
     foreach ($this->getPaths() as $path) {
 
       $path = Filesystem::resolvePath($path, $this->projectRoot);
@@ -29,12 +34,22 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
         continue;
       }
 
+      // If we are asked to exclude it...do so.
+      if( $this->exclude )
+      {
+        if( preg_match($this->exclude,$path))
+        {
+          continue;
+        }
+      }
+      
+
       if (substr($path, -8) == 'Test.php') {
         // Looks like a valid test file name.
         $this->affectedTests[$path] = $path;
         continue;
       }
-
+      
       if ($test = $this->findTestFile($path)) {
         $this->affectedTests[$path] = $test;
       }
@@ -45,7 +60,7 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
       throw new ArcanistNoEffectException(pht('No tests to run.'));
     }
 
-    $this->prepareConfigFile();
+    
     $futures = array();
     $tmpfiles = array();
     foreach ($this->affectedTests as $class_path => $test_path) {
@@ -148,6 +163,17 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
           // Don't return the original file.
           continue;
         }
+
+          
+        // If we are asked to exclude it...do so.
+        if( $this->exclude )
+        {
+          if( preg_match($this->exclude,$full_path))
+          {
+            continue;
+          }
+        }
+        
         return $full_path;
       }
     }
@@ -275,6 +301,10 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
         $this->phpunitBinary = Filesystem::resolvePath($bin, $project_root);
       }
     }
+
+    $this->exclude = $this->getConfigurationManager()->getConfigFromAnySource(
+      'unit.phpunit.exclude');
+
   }
 
 }
