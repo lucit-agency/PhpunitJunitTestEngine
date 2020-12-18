@@ -3,34 +3,70 @@
 /**
  * PHPUnit wrapper that can read junit output files
  */
-final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
+final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine
+{
 
   private $configFile;
   private $phpunitBinary = 'phpunit';
   private $affectedTests;
   private $projectRoot;
   private $exclude;
+  private $maxExecutingProcesses = 6; //TODO in some future version, create a cli argument so we can pass this in
 
-  public function run() {
+  private $pathToAllTests = "tests";  //This is bad, someone fix this later
 
-    $this->projectRoot = $this->getWorkingCopy()->getProjectRoot();
-    $this->affectedTests = array();
+  protected function supportsRunAllTests()
+  { 
+    return true;
+  }
 
-    $this->prepareConfigFile();
+  /**
+   * This looks for all test files in the `./tests` folder and executes them
+   * This is hardcoded because that is where I put all my tests
+   * Maybe some future editor of this code will make it better
+   * 
+   */
+  public function setAllTestFiles()
+  {
+
+    $path = Filesystem::resolvePath( $this->pathToAllTests , $this->projectRoot);
+
+    $iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator($path) );
+
+    $allFiles = array_filter( iterator_to_array($iterator), function($file) {
+        return $file->isFile() && (substr($file, -8) == 'Test.php');
+    });
+
+    $files = array_keys($allFiles);
+
+    foreach($files as $file)
+    {
+      $this->affectedTests[$file] = $file;
+    }
+
+  }
+
+  /**
+   * This will find any test files that match up to a changed file
+   */
+  public function setAffectedTestFiles()
+  {
     
-    foreach ($this->getPaths() as $path) {
+    foreach ($this->getPaths() as $path)
+    {
 
       $path = Filesystem::resolvePath($path, $this->projectRoot);
 
-      // TODO: add support for directories
       // Users can call phpunit on the directory themselves
-      if (is_dir($path)) {
+      if( is_dir($path) )
+      {
         continue;
       }
 
       // Not sure if it would make sense to go further if
       // it is not a .php file
-      if (substr($path, -4) != '.php') {
+      if( substr($path, -4) != '.php' )
+      {
         continue;
       }
 
@@ -44,33 +80,62 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
       }
       
 
-      if (substr($path, -8) == 'Test.php') {
+      if( substr($path, -8) == 'Test.php' )
+      {
         // Looks like a valid test file name.
         $this->affectedTests[$path] = $path;
         continue;
       }
       
-      if ($test = $this->findTestFile($path)) {
+      if( $test = $this->findTestFile($path) )
+      {
         $this->affectedTests[$path] = $test;
       }
 
     }
 
-    if (empty($this->affectedTests)) {
+
+  }
+
+
+  public function run() {
+
+    $this->projectRoot = $this->getWorkingCopy()->getProjectRoot();
+
+    $this->affectedTests = array();
+
+    $this->prepareConfigFile();
+
+    if( $this->getRunAllTests() )
+    {
+      $this->setAllTestFiles();
+    }
+    else
+    {
+      $this->setAffectedTestFiles();
+    }
+    
+    if( empty($this->affectedTests) )
+    {
       throw new ArcanistNoEffectException(pht('No tests to run.'));
     }
 
     
     $futures = array();
     $tmpfiles = array();
-    foreach ($this->affectedTests as $class_path => $test_path) {
-      if (!Filesystem::pathExists($test_path)) {
+    foreach ($this->affectedTests as $class_path => $test_path)
+    {
+      if( !Filesystem::pathExists($test_path) )
+      {
         continue;
       }
+
       $json_tmp = new TempFile();
       $clover_tmp = null;
       $clover = null;
-      if ($this->getEnableCoverage() !== false) {
+
+      if( $this->getEnableCoverage() !== false)
+      {
         $clover_tmp = new TempFile();
         $clover = csprintf('--coverage-clover %s', $clover_tmp);
       }
@@ -79,26 +144,36 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
 
       $stderr = '-d display_errors=stderr';
 
-      $futures[$test_path] = new ExecFuture('%C %C %C --log-junit %s %C %s',
-        $this->phpunitBinary, $config, $stderr, $json_tmp, $clover, $test_path);
-      $tmpfiles[$test_path] = array(
+      $futures[$test_path] = new ExecFuture(
+          '%C %C %C --log-junit %s %C %s',
+          $this->phpunitBinary, 
+          $config, 
+          $stderr, 
+          $json_tmp, 
+          $clover, 
+          $test_path
+      );
+
+      $tmpfiles[$test_path] = [
         'json' => $json_tmp,
         'clover' => $clover_tmp,
-      );
+      ];
     }
 
-    $results = array();
-    $futures = id(new FutureIterator($futures))
-      ->limit(4);
-    foreach ($futures as $test => $future) {
+    $results = [];
+    $futures = id( new FutureIterator($futures) )->limit( $this->maxExecutingProcesses );
 
+    foreach( $futures as $test => $future )
+    {
       list($err, $stdout, $stderr) = $future->resolve();
 
       $results[] = $this->parseTestResults(
         $test,
         $tmpfiles[$test]['json'],
         $tmpfiles[$test]['clover'],
-        $stderr);
+        $stderr
+      );
+
     }
 
     return array_mergev($results);
@@ -114,8 +189,10 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
    *
    * @return array
    */
-  private function parseTestResults($path, $json_tmp, $clover_tmp, $stderr) {
+  private function parseTestResults($path, $json_tmp, $clover_tmp, $stderr)
+  {
     $test_results = Filesystem::readFile($json_tmp);
+
     return id(new ArcanistPhpunitJunitTestResultParser())
       ->setEnableCoverage($this->getEnableCoverage())
       ->setProjectRoot($this->projectRoot)
@@ -136,21 +213,26 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
    * @param   string      PHP file to locate test cases for.
    * @return  string|null Path to test cases, or null.
    */
-  private function findTestFile($path) {
+  private function findTestFile($path)
+  {
+
     $root = $this->projectRoot;
     $path = Filesystem::resolvePath($path, $root);
 
     $file = basename($path);
-    $possible_files = array(
+    $possible_files = [
       $file,
       substr($file, 0, -4).'Test.php',
-    );
+    ];
 
     $search = self::getSearchLocationsForTests($path);
 
-    foreach ($search as $search_path) {
-      foreach ($possible_files as $possible_file) {
+    foreach ($search as $search_path)
+    {
+      foreach ($possible_files as $possible_file)
+      {
         $full_path = $search_path.$possible_file;
+
         if (!Filesystem::pathExists($full_path)) {
           // If the file doesn't exist, it's clearly a miss.
           continue;
@@ -177,7 +259,6 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
         return $full_path;
       }
     }
-
     return null;
   }
 
@@ -221,24 +302,27 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
    * @param   string        PHP file to locate test cases for.
    * @return  list<string>  List of directories to search for tests in.
    */
-  public static function getSearchLocationsForTests($path) {
+  public static function getSearchLocationsForTests($path)
+  {
     $file = basename($path);
     $dir  = dirname($path);
 
-    $test_dir_names = array('tests', 'Tests');
+    $test_dir_names = ['tests', 'Tests'];
 
-    $try_directories = array();
+    $try_directories = [];
 
     // Try in the current directory.
-    $try_directories[] = array($dir);
+    $try_directories[] = [$dir];
 
     // Try in a tests/ directory anywhere in the ancestry.
-    foreach (Filesystem::walkToRoot($dir) as $parent_dir) {
+    foreach (Filesystem::walkToRoot($dir) as $parent_dir)
+    {
       if ($parent_dir == '/') {
         // We'll restore this later.
         $parent_dir = '';
       }
-      foreach ($test_dir_names as $test_dir_name) {
+      foreach ($test_dir_names as $test_dir_name)
+      {
         $try_directories[] = array($parent_dir, $test_dir_name);
       }
     }
@@ -246,8 +330,11 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
     // Try replacing each directory component with 'tests/'.
     $parts = trim($dir, DIRECTORY_SEPARATOR);
     $parts = explode(DIRECTORY_SEPARATOR, $parts);
-    foreach (array_reverse(array_keys($parts)) as $key) {
-      foreach ($test_dir_names as $test_dir_name) {
+
+    foreach (array_reverse(array_keys($parts)) as $key)
+    {
+      foreach ($test_dir_names as $test_dir_name)
+      {
         $try = $parts;
         $try[$key] = $test_dir_name;
         array_unshift($try, '');
@@ -256,8 +343,10 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
     }
 
     // Try adding 'tests/' at each level.
-    foreach (array_reverse(array_keys($parts)) as $key) {
-      foreach ($test_dir_names as $test_dir_name) {
+    foreach (array_reverse(array_keys($parts)) as $key)
+    {
+      foreach ($test_dir_names as $test_dir_name)
+      {
         $try = $parts;
         $try[$key] = $test_dir_name.DIRECTORY_SEPARATOR.$try[$key];
         array_unshift($try, '');
@@ -266,7 +355,8 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
     }
 
     $results = array();
-    foreach ($try_directories as $parts) {
+    foreach ($try_directories as $parts)
+    {
       $results[implode(DIRECTORY_SEPARATOR, $parts).DIRECTORY_SEPARATOR] = true;
     }
 
@@ -277,33 +367,41 @@ final class PhpunitJunitTestEngine extends ArcanistUnitTestEngine {
    * Tries to find and update phpunit configuration file based on
    * `phpunit_config` option in `.arcconfig`.
    */
-  private function prepareConfigFile() {
+  private function prepareConfigFile()
+  {
     $project_root = $this->projectRoot.DIRECTORY_SEPARATOR;
-    $config = $this->getConfigurationManager()->getConfigFromAnySource(
-      'phpunit_config');
+    $config = $this->getConfigurationManager()->getConfigFromAnySource('phpunit_config');
 
-    if ($config) {
-      if (Filesystem::pathExists($project_root.$config)) {
+    if ($config)
+    {
+      if (Filesystem::pathExists($project_root.$config))
+      {
         $this->configFile = $project_root.$config;
-      } else {
+      }
+      else
+      {
         throw new Exception(
           pht(
             'PHPUnit configuration file was not found in %s',
             $project_root.$config));
       }
     }
-    $bin = $this->getConfigurationManager()->getConfigFromAnySource(
-      'unit.phpunit.binary');
-    if ($bin) {
-      if (Filesystem::binaryExists($bin)) {
+
+    $bin = $this->getConfigurationManager()->getConfigFromAnySource('unit.phpunit.binary');
+
+    if( $bin )
+    {
+      if (Filesystem::binaryExists($bin))
+      {
         $this->phpunitBinary = $bin;
-      } else {
+      }
+      else
+      {
         $this->phpunitBinary = Filesystem::resolvePath($bin, $project_root);
       }
     }
 
-    $this->exclude = $this->getConfigurationManager()->getConfigFromAnySource(
-      'unit.phpunit.exclude');
+    $this->exclude = $this->getConfigurationManager()->getConfigFromAnySource('unit.phpunit.exclude');
 
   }
 
